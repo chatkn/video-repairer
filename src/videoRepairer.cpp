@@ -82,10 +82,6 @@ const cv::Scalar VideoRepairer::_getSSIM(const cv::Mat& i1,
     return  mean(ssim_map); // mssim = average of ssim map
 }
 
-/*
-    compute ssim between each frame that follows because the reference frame is the
-    precedent frame.
-*/
 void    VideoRepairer::_computeSSIM()
 {
     cv::Mat hsvFrameFst, hsvFrameSnd;
@@ -186,7 +182,7 @@ void        VideoRepairer::_findCorruptedFrames()
             idsCorrupted.insert(sndIdDistrib);
         }
     }
-    /*  detect the id outlier by store ones with occurence */
+    /*  detect the id outlier by store the ones with occurence */
     for (auto & it = idsCorrupted.begin(); it != idsCorrupted.end(); ++it)
     {
         it = std::adjacent_find(it, idsCorrupted.end());
@@ -194,16 +190,12 @@ void        VideoRepairer::_findCorruptedFrames()
             break;
         this->_corruptedFrame.push_back(*it);
     }
-    this->_determineNewCorruptedFrame(std::prev(zScoreSamples.end(), 1), idsCorrupted, comparedFrames);
+    const auto & idRef = std::prev(zScoreSamples.end(), 1);
+    this->_determineNewCorruptedFrame(idRef->second.first, idsCorrupted, comparedFrames);
 
 }
 
-/*
-        insert the frame that look like corrupted by recompute their ssim
-        with a reference frame that is certainly not corrupted.
-
-*/
-void    VideoRepairer::_determineNewCorruptedFrame(const const_it_multimap sampleRef,
+void    VideoRepairer::_determineNewCorruptedFrame(const uint idRef,
                                                    std::multiset<uint>& idsCorrupted, 
                                                    std::map<uint, std::vector<uint>> &comparedFrames)
 {
@@ -217,12 +209,11 @@ void    VideoRepairer::_determineNewCorruptedFrame(const const_it_multimap sampl
     
     if (!idsCorrupted.empty())
     {
-        const auto& idRef = (*sampleRef).second;
         std::map<double, uint>  newSSIMIds;
 
         for (const auto & id : idsCorrupted)
         {
-            const auto ssimHSV = _getSSIM(_frames[idRef.first].clone(), _frames[id].clone());
+            const auto ssimHSV = _getSSIM(_frames[idRef].clone(), _frames[id].clone());
             const double meanSSIMHsv = (ssimHSV[0] + ssimHSV[1] + ssimHSV[2]) / 3;
 
             newSSIMIds.insert(std::make_pair(meanSSIMHsv * 100, id));
