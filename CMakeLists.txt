@@ -10,11 +10,15 @@ find_package(OpenCV REQUIRED )
 
 SET(SOURCES
 	src/videoRepairer.cpp
+ src/munkres.cpp
+ src/AssignementManager.cpp
 	src/main.cpp
 )
 
 SET(HEADER
 	include/videoRepairer.hh
+ include/munkres.h
+ include/AssignementManager.hh
 )
 
 

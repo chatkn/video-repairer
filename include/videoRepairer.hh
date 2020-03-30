@@ -2,17 +2,20 @@
 #ifndef VIDEOREPAIRER_HH_
 # define VIDEOREPAIRER_HH_
 
-# include <iostream>
 # include <stdexcept>
 # include <filesystem>
 # include <opencv2/opencv.hpp>
+# include <opencv2/tracking.hpp>
 
+# include "AssignementManager.hh"
 
 namespace   fs = std::filesystem;
 
 using       pair_uint = std::pair<uint, uint>;
 using       array_double = std::array<double, 3>;
 using       const_it_multimap = std::multimap<double, pair_uint>::const_iterator;
+using       frame_rec = std::pair<cv::Mat, cv::Rect2d>;
+using       iterator_frames = std::unordered_map<uint, frame_rec>::iterator;
 
 struct                          SampleSSIM
 {
@@ -29,20 +32,36 @@ struct                          SampleSSIM
 
 class                                           VideoRepairer
 {
-    const fs::path&                             _videoPath;
-    std::unordered_map<uint, cv::Mat>           _frames;
+    const fs::path&                              _videoPath;
+    std::unordered_map<uint, frame_rec>         _frames;
+
     std::vector<SampleSSIM>                     _samplesSSIM;
     double                                      _meanSSIMDist;
     double                                      _ecartType;
     std::vector<uint>                           _corruptedFrame;
 
+    pair_uint                                   _pairIdsSim;
+
+    std::unordered_map<uint,
+        std::map<uint, double>>                 _IoUFrames;
+    std::unordered_map<uint, uint>              _idFrameToIndex;
+    std::unordered_map<uint, uint>              _indexToIdFrame;
+
+
+    std::unordered_map<uint, uint>              _originalMapID;
+    cv::Mat_<double>                            _originalCostMat;
+    std::unique_ptr<Assignement>                _assginementFrames;
+
 public:
     VideoRepairer(const fs::path &);
     ~VideoRepairer();
+    
+    void                                        detectCorruptedFrames();
+    void                                        sortFrames();
+    void                                        createVideo();
 
-    void                                        startRepair();
-    const std::unordered_map<uint, cv::Mat>&    getFrames()const;
-
+    const std::unordered_map<uint, frame_rec>&    getFrames()const;
+            
 private:
     void                                        _extractFrames();
     /*
@@ -69,8 +88,10 @@ private:
     **         to the thresh (-0.5) are corrupt and therefore saved in the idCorrupted container.
     **         Than, to select the good one between the two id, we saved in the _corrupted frames 
     **         the one which have another occurence.
+    **
+    ** @return: ids pair of two good similar frames
     */
-    void                                        _findCorruptedFrames();
+    const pair_uint                            _findCorruptedFrames();
 
     /*
     ** @brief: Compute the mean, the ecartype and all z-score of the distribution.
@@ -97,8 +118,18 @@ private:
     **  the _corruptedFrame vector
     */
     void                                        _removeCorruptedFrames();
+
+    void                                        _detectObj();
+    void                                        _trackingObj();
+    void                                        _computeIoU(iterator_frames &);
+  
+    void                                        _initMovementCost(cv::Mat_<double>&);
+    void                                        _useHungarianAlgorithm(cv::Mat_<double>&);
+    const std::vector<uint>                     _updateSetOfIdFrames();
+    void                                        _updateCostMatrice(cv::Mat_<double>&);
+
     void                                        _showFrames();
- 
+    void                                        _showOrderederFrames( std::vector<std::list<uint>>&);
 };
 
 #endif // !VIDEOREPAIRER_HH_

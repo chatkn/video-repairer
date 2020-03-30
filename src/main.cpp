@@ -18,8 +18,12 @@ int main(int ac, char** av)
 
     try
     {
-        VideoRepairer   videoRepairer(videoCorrupted);
-        videoRepairer.startRepair();
+        VideoRepairer   repairer(videoCorrupted);
+    
+        repairer.detectCorruptedFrames();
+        repairer.sortFrames();
+        repairer.createVideo();
+
     }
     catch (std::exception& error)
     {
