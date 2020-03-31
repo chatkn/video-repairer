@@ -9,16 +9,18 @@ endif(MSVC)
 find_package(OpenCV REQUIRED )
 
 SET(SOURCES
+	src/main.cpp
 	src/videoRepairer.cpp
  src/munkres.cpp
- src/AssignementManager.cpp
-	src/main.cpp
+ src/Manager.cpp
+src/ListAssignement.cpp
 )
 
 SET(HEADER
 	include/videoRepairer.hh
  include/munkres.h
- include/AssignementManager.hh
+ include/Manager.hh
+ include/ListAssignement.hh
 )
 
 

@@ -1,8 +1,8 @@
 #include "VideoRepairer.hh"
 #include "munkres.h"
 
-VideoRepairer::VideoRepairer(const fs::path& videoPath)
-    : _videoPath(videoPath), _meanSSIMDist(0)
+VideoRepairer::VideoRepairer(const fs::path& videoPath, const std::string& outputName)
+    : _videoPath(videoPath), _outputName(outputName)
 {}
 
 VideoRepairer::~VideoRepairer()
@@ -17,11 +17,17 @@ SampleSSIM::SampleSSIM(const pair_uint& ids,
 
 SampleSSIM::~SampleSSIM(){}
 
-void    VideoRepairer::_extractFrames()
+void      VideoRepairer::_extractFrames()
 {
     auto video = cv::VideoCapture(_videoPath.string());
     if (!video.isOpened())
         throw std::runtime_error("Error by opening the video " + _videoPath.filename().string());
+
+    uint frame_width = static_cast<uint>(video.get(cv::CAP_PROP_FRAME_WIDTH));
+    uint frame_height = static_cast<uint>(video.get(cv::CAP_PROP_FRAME_HEIGHT));
+    _frameSize = cv::Size(frame_width, frame_height);
+    _fourcc = static_cast<int>(video.get(cv::CAP_PROP_FOURCC));
+    _fps = video.get(cv::CAP_PROP_FPS);
 
     cv::Mat frame;
     uint    id = 0;
@@ -35,7 +41,7 @@ void    VideoRepairer::_extractFrames()
     video.release();
 }
 
-const cv::Scalar VideoRepairer::_getSSIM(const cv::Mat& i1,
+const cv::Scalar    VideoRepairer::_getSSIM(const cv::Mat& i1,
                                          const cv::Mat& i2) const
 {
     int d = CV_32F;
@@ -112,38 +118,6 @@ void    VideoRepairer::_computeSSIM()
     }
 }
 
-void    VideoRepairer::_showFrames()
-{
-    cv::namedWindow("frame", cv::WINDOW_NORMAL);
-    for (auto frame : _frames)
-    {
-        cv::imshow("frame", frame.second.first.clone());
-        cv::waitKey(0);
-    }
-    cv::destroyWindow("frame");    
-}
-
-void    VideoRepairer::_showOrderederFrames(std::vector<std::list<uint>>& closeList)
-{
-    cv::namedWindow("frame", cv::WINDOW_NORMAL);
-    for (auto & list : closeList)
-    {
-        list.reverse();
-        std::cout << "[";
-        for (const auto & id : list)
-        {
-            cv::Mat frame = _frames[id].first;
-            cv::imshow("frame", frame.clone());
-            std::cout << id << " , ";
-            cv::waitKey(0);
-        }
-        std::cout << "]" << std::endl;
-    }
-
-    cv::destroyWindow("frame");
-
-}
-
 void    VideoRepairer::_removeCorruptedFrames()
 {
     for (auto& id : _corruptedFrame)
@@ -154,37 +128,41 @@ void    VideoRepairer::_removeCorruptedFrames()
 
 }
 
-const std::multimap<double, pair_uint>        VideoRepairer::_computeDataGaussian()
+const std::multimap<double, 
+                    pair_uint>      VideoRepairer::_computeDataGaussian()
 {
+    double  meanSSIMDist = 0;
+    double  ecartType = 0;
+
     /*      MEAN ON DISTRIB            */
     for (const auto & sample : this->_samplesSSIM)
     {
         const double& meanHsv = sample._meanHsvSSIM;
-        this->_meanSSIMDist += meanHsv;
+        meanSSIMDist += meanHsv;
     }
-    this->_meanSSIMDist = round(this->_meanSSIMDist / this->_samplesSSIM.size());
+    meanSSIMDist = round(meanSSIMDist / this->_samplesSSIM.size());
 
     /*      ECART TYPE ON DISTRIB      */
     double sigma = 0;
     for (const auto & sample: this->_samplesSSIM)
     {
-         const auto dist = (sample._meanHsvSSIM - this->_meanSSIMDist);
+         const auto dist = (sample._meanHsvSSIM - meanSSIMDist);
          sigma += (dist * dist);
     }
-    this->_ecartType = round(std::sqrt(sigma) / this->_samplesSSIM.size());
+    ecartType = round(std::sqrt(sigma) / this->_samplesSSIM.size());
 
     /*      Z-SCORE DISTRIB            */
     std::multimap<double, pair_uint>   zScoreOrdered;
     for (auto & sample : this->_samplesSSIM)
     {
-        sample._zScore = (sample._meanHsvSSIM - this->_meanSSIMDist) / this->_ecartType;
+        sample._zScore = (sample._meanHsvSSIM - meanSSIMDist) / ecartType;
         zScoreOrdered.insert(std::make_pair(sample._zScore, sample._ids));
     }
 
     return zScoreOrdered;
 }
 
-const pair_uint     VideoRepairer::_findCorruptedFrames()
+void    VideoRepairer::_findCorruptedFrames()
 {
     const auto & zScoreSamples = this->_computeDataGaussian();
 
@@ -217,9 +195,8 @@ const pair_uint     VideoRepairer::_findCorruptedFrames()
     this->_determineNewCorruptedFrame(idRef->second.first, idsCorrupted, comparedFrames);
     const auto & pairIdSim = std::prev(zScoreSamples.end(), 4);
 
-    return pairIdSim->second;
+    _pairIdsSim = pairIdSim->second;
 }
-
 
 void    VideoRepairer::_determineNewCorruptedFrame(const uint idRef,
                                                    std::multiset<uint>& idsCorrupted, 
@@ -381,7 +358,7 @@ void    VideoRepairer::_useHungarianAlgorithm(cv::Mat_<double>& hugarianMatrice)
     m.solve(hugarianMatrice);
 }
 
-const std::vector<uint>    VideoRepairer::_updateSetOfIdFrames()
+const std::vector<uint>     VideoRepairer::_updateSetOfIdFrames()
 {
     const auto& idsFrame = this->_assginementFrames->getExtremityIdClose();
 
@@ -404,9 +381,6 @@ void    VideoRepairer::_updateCostMatrice(cv::Mat_<double>& hungarianMat)
     const uint  size = static_cast<uint>(idsFrame.size());
     cv::resize(hungarianMat, hungarianMat, cv::Size(size, size));
     hungarianMat.setTo(10);
-
-    std::cout << "Mat size: " << hungarianMat.size();
-    std::cout << "Mat value [0:0]: " << hungarianMat[0][0] << std::endl;
 
     for (auto& itRow = idsFrame.begin(); itRow != idsFrame.end(); ++itRow)
     {
@@ -433,64 +407,76 @@ void    VideoRepairer::detectCorruptedFrames()
     this->_extractFrames();
     std::cout << "[Video Repairer] frames extracted from the video" << std::endl;
 
-
     std::cout << "[Video Repairer] Starting to compute SSIM between frames..." << std::endl;
     this->_computeSSIM();
-    std::cout << "[Video Repairer] ...a SSIM is computed between each image that follows." << std::endl;
+    std::cout << "[Video Repairer] ...a SSIM is computed between each image that follows" << std::endl;
 
-    _pairIdsSim = this->_findCorruptedFrames();
-    std::cout << "[Video Repairer] Corrupted frames was found" << std::endl;
-
-    std::cout << "size: " << _frames.size() << std::endl;
-
+    this->_findCorruptedFrames();
     this->_removeCorruptedFrames();
-
-    std::cout << "[Video Repairer] Corrupted frames was removed" << std::endl;
-    std::cout << "size: " << _frames.size() << std::endl;
+    std::cout << "[Video Repairer] Corrupted frames were found and removed" << std::endl;
 }
 
-void    VideoRepairer::sortFrames()
+const std::list<uint>   VideoRepairer::sortFrames()
 {
-
     this->_detectObj();
+    std::cout << "[Video Repairer] Object detected and tracked from frames" << std::endl;
+
     this->_computeIoU(_frames.begin());
+    std::cout << "[Video Repairer] Computed IoU of the detected object between each frames" << std::endl;
 
     const uint size = static_cast<uint>(_IoUFrames.size());
-    cv::Mat_<double> hugarianMatrice(size, size, 10); // 11 for max default cost
+    cv::Mat_<double> hugarianMatrice(size, size, 10); // 10 for max default cost
 
    /*
     *   INIT
     */
     this->_initMovementCost(hugarianMatrice);
+    std::cout << "[Video Repairer] Applied a movement cost for each IoU values" << std::endl;
     this->_useHungarianAlgorithm(hugarianMatrice);
-    std::cout << "size: " << hugarianMatrice.size << std::endl;
+    std::cout << "[Video Repairer] Computed the hungarian matrice from the cost matrice" << std::endl;
 
-    this->_assginementFrames = std::make_unique<Assignement>();
+    this->_assginementFrames = std::make_unique<Manager>();
+    std::cout << "[Video Repairer] The manager of frames assignement is launched" << std::endl;
     this->_assginementFrames->launchMatching(hugarianMatrice, this->_indexToIdFrame);
 
    /*
     *   UPDATE
     */
-    auto closeList = this->_assginementFrames->getCloseList(0);
-    while (closeList.size() != 1)
+    for (auto& closeList = this->_assginementFrames->getCloseList(0);
+        closeList.size() != 1;)
     {
-        std::cout << "CLOSE SIZE: " << closeList.size() << std::endl;
         this->_updateCostMatrice(hugarianMatrice);
         this->_useHungarianAlgorithm(hugarianMatrice);
         this->_assginementFrames->launchMatching(hugarianMatrice, this->_indexToIdFrame);
-        closeList = this->_assginementFrames->getCloseList(0);
     }
-    this->_showOrderederFrames(closeList);
 
-    
+    std::cout << "[Video Repairer] Finish to compute the last round of frames assignement" << std::endl;
+    return this->_assginementFrames->getCloseList(0)[0];
 }
 
-const std::unordered_map<uint, frame_rec >&     VideoRepairer::getFrames()const
+void    VideoRepairer::createVideo(const uintList& idList)
 {
-    return _frames;
-}
+    auto newpath = _videoPath;
+    newpath.replace_filename(_outputName + ".mp4");
+    uint id = 1;
+    while (fs::exists(newpath))
+    {
+        newpath.replace_filename(_outputName + std::to_string(id) + ".mp4");
+        ++id;
+    }
+    cv::VideoWriter outputVideo(newpath.string(), _fourcc, _fps, _frameSize, true);
 
-void                                        VideoRepairer::createVideo()
-{
+    if (!outputVideo.isOpened())
+    {
+        std::cout << "Could not open the output video for write: " << std::endl;
+        return;
+    }
 
+     for (const auto & id : idList)
+    {
+        cv::Mat frame = _frames[id].first;
+        outputVideo.write(frame);
+    }
+    std::cout << "[Video Repairer] the video " << newpath.filename().string() << " is created" << std::endl;
+    std::cout << "[Video Repairer] Access path: " << newpath.parent_path().string() << std::endl;
 }
