@@ -1,8 +1,10 @@
 #include "VideoRepairer.hh"
 #include "munkres.h"
 
-VideoRepairer::VideoRepairer(const fs::path& videoPath, const std::string& outputName)
-    : _videoPath(videoPath), _outputName(outputName)
+VideoRepairer::VideoRepairer(const fs::path& videoPath, 
+                             const std::string& outputName)
+    :   _videoPath(videoPath), 
+        _outputName(outputName)
 {}
 
 VideoRepairer::~VideoRepairer()
@@ -12,7 +14,9 @@ VideoRepairer::~VideoRepairer()
 SampleSSIM::SampleSSIM(const pair_uint& ids,
                        const array_double& hsvSSIM,
                        const double meanHsvSSIM)
-    : _ids(ids), _hsvSSIM(hsvSSIM), _meanHsvSSIM(meanHsvSSIM)
+    :   _ids(ids), 
+        _hsvSSIM(hsvSSIM), 
+        _meanHsvSSIM(meanHsvSSIM)
 {}
 
 SampleSSIM::~SampleSSIM(){}
@@ -38,15 +42,19 @@ void      VideoRepairer::_extractFrames()
         ++id;
     }
 
+    if (id != 114) // original nb of frames in the given corrupted video
+    {
+        video.release();
+        throw std::runtime_error("This input video does not look like the original given corrupted video");
+    }
     video.release();
 }
 
 const cv::Scalar    VideoRepairer::_getSSIM(const cv::Mat& i1,
-                                         const cv::Mat& i2) const
+                                            const cv::Mat& i2) const
 {
-    int d = CV_32F;
-
-    cv::Mat I1, I2;
+    int             d = CV_32F;
+    cv::Mat         I1, I2;
     i1.convertTo(I1, d);           // cannot calculate on one byte large values
     i2.convertTo(I2, d);
 
@@ -54,15 +62,14 @@ const cv::Scalar    VideoRepairer::_getSSIM(const cv::Mat& i1,
     cv::Mat I1_2 = I1.mul(I1);        // I1^2
     cv::Mat I1_I2 = I1.mul(I2);        // I1 * I2
 
-    cv::Mat mu1, mu2;   //
+    cv::Mat         mu1, mu2;   //
     cv::GaussianBlur(I1, mu1, cv::Size(11, 11), 1.5);
     cv::GaussianBlur(I2, mu2, cv::Size(11, 11), 1.5);
 
-    cv::Mat mu1_2 = mu1.mul(mu1);
-    cv::Mat mu2_2 = mu2.mul(mu2);
-    cv::Mat mu1_mu2 = mu1.mul(mu2);
-
-    cv::Mat sigma1_2, sigma2_2, sigma12;
+    cv::Mat         mu1_2 = mu1.mul(mu1);
+    cv::Mat         mu2_2 = mu2.mul(mu2);
+    cv::Mat         mu1_mu2 = mu1.mul(mu2);
+    cv::Mat         sigma1_2, sigma2_2, sigma12;
 
     cv::GaussianBlur(I1_2, sigma1_2, cv::Size(11, 11), 1.5);
     sigma1_2 -= mu1_2;
@@ -73,8 +80,8 @@ const cv::Scalar    VideoRepairer::_getSSIM(const cv::Mat& i1,
     cv::GaussianBlur(I1_I2, sigma12, cv::Size(11, 11), 1.5);
     sigma12 -= mu1_mu2;
 
-    cv::Mat t1, t2, t3;
-    const double C1 = 6.5025, C2 = 58.5225;
+    cv::Mat         t1, t2, t3;
+    const double    C1 = 6.5025, C2 = 58.5225;
 
     t1 = 2 * mu1_mu2 + C1;
     t2 = 2 * sigma12 + C2;
@@ -84,17 +91,17 @@ const cv::Scalar    VideoRepairer::_getSSIM(const cv::Mat& i1,
     t2 = sigma1_2 + sigma2_2 + C2;
     t1 = t1.mul(t2);               // t1 =((mu1_2 + mu2_2 + C1).*(sigma1_2 + sigma2_2 + C2))
 
-    cv::Mat ssim_map;
+    cv::Mat         ssim_map;
     cv::divide(t3, t1, ssim_map);      // ssim_map =  t3./t1;
 
     return  mean(ssim_map); // mssim = average of ssim map
 }
 
-void    VideoRepairer::_computeSSIM()
+void        VideoRepairer::_computeSSIM()
 {
     cv::Mat hsvFrameFst, hsvFrameSnd;
-    auto itFirst = _frames.begin();
-    auto itSnd = itFirst;
+    auto    itFirst = _frames.begin();
+    auto    itSnd = itFirst;
 
     while (itFirst != _frames.end() && std::next(itFirst) != _frames.end())
     {
@@ -111,9 +118,7 @@ void    VideoRepairer::_computeSSIM()
 
         const pair_uint ids{ frameFirst.first, frameSnd.first };
         SampleSSIM sample(ids, hsvSSIM, meanHsvSSIM);
-
         _samplesSSIM.push_back(sample);
-
         itFirst = itSnd;
     }
 }
@@ -125,49 +130,43 @@ void    VideoRepairer::_removeCorruptedFrames()
         auto& it = _frames.find(id);
         it = _frames.erase(it);
     }
-
 }
 
 const std::multimap<double, 
                     pair_uint>      VideoRepairer::_computeDataGaussian()
 {
-    double  meanSSIMDist = 0;
-    double  ecartType = 0;
+    double                          meanSSIMDist = 0;
+    double                          ecartType = 0;
 
-    /*      MEAN ON DISTRIB            */
-    for (const auto & sample : this->_samplesSSIM)
-    {
+    /*  MEAN ON DISTRIB */
+    for (const auto & sample : this->_samplesSSIM){
         const double& meanHsv = sample._meanHsvSSIM;
         meanSSIMDist += meanHsv;
     }
     meanSSIMDist = round(meanSSIMDist / this->_samplesSSIM.size());
 
-    /*      ECART TYPE ON DISTRIB      */
+    /*  ECART TYPE ON DISTRIB   */
     double sigma = 0;
-    for (const auto & sample: this->_samplesSSIM)
-    {
+    for (const auto & sample: this->_samplesSSIM){
          const auto dist = (sample._meanHsvSSIM - meanSSIMDist);
          sigma += (dist * dist);
     }
     ecartType = round(std::sqrt(sigma) / this->_samplesSSIM.size());
 
-    /*      Z-SCORE DISTRIB            */
+    /*  Z-SCORE DISTRIB */
     std::multimap<double, pair_uint>   zScoreOrdered;
-    for (auto & sample : this->_samplesSSIM)
-    {
+    for (auto & sample : this->_samplesSSIM){
         sample._zScore = (sample._meanHsvSSIM - meanSSIMDist) / ecartType;
         zScoreOrdered.insert(std::make_pair(sample._zScore, sample._ids));
     }
-
     return zScoreOrdered;
 }
 
-void    VideoRepairer::_findCorruptedFrames()
+void                                    VideoRepairer::_findCorruptedFrames()
 {
-    const auto & zScoreSamples = this->_computeDataGaussian();
-
     std::multiset<uint>                 idsCorrupted;
     std::map<uint, std::vector<uint>>   comparedFrames;
+    const auto &                        zScoreSamples = this->_computeDataGaussian();
 
     /*  Get outlier frames */
     for (const auto& distribution : zScoreSamples)
@@ -198,7 +197,7 @@ void    VideoRepairer::_findCorruptedFrames()
     _pairIdsSim = pairIdSim->second;
 }
 
-void    VideoRepairer::_determineNewCorruptedFrame(const uint idRef,
+void                        VideoRepairer::_determineNewCorruptedFrame(const uint idRef,
                                                    std::multiset<uint>& idsCorrupted, 
                                                    std::map<uint, std::vector<uint>> &comparedFrames)
 {
@@ -210,47 +209,45 @@ void    VideoRepairer::_determineNewCorruptedFrame(const uint idRef,
             idsCorrupted.erase(associativeId);
     }
     
-    if (!idsCorrupted.empty())
+    if (idsCorrupted.empty())
+        return;
+    
+    std::map<double, uint>  newSSIMIds;    
+    for (const auto & id : idsCorrupted)
     {
-        std::map<double, uint>  newSSIMIds;
-
-        for (const auto & id : idsCorrupted)
-        {
-            const auto ssimHSV = _getSSIM(_frames[idRef].first.clone(), _frames[id].first.clone());
-            const double meanSSIMHsv = (ssimHSV[0] + ssimHSV[1] + ssimHSV[2]) / 3;
-
-            newSSIMIds.insert(std::make_pair(meanSSIMHsv * 100, id));
-        }
-        const auto& itCorrupted = newSSIMIds.begin();
-        this->_corruptedFrame.push_back(itCorrupted->second);
+        const auto ssimHSV = _getSSIM(_frames[idRef].first.clone(), _frames[id].first.clone());
+        const double meanSSIMHsv = (ssimHSV[0] + ssimHSV[1] + ssimHSV[2]) / 3;
+        
+        newSSIMIds.insert(std::make_pair(meanSSIMHsv * 100, id));
     }
+    const auto& itCorrupted = newSSIMIds.begin();
+    this->_corruptedFrame.push_back(itCorrupted->second);
 }
 
-void    VideoRepairer::_detectObj()
+void            VideoRepairer::_detectObj()
 {
-    const uint idFirst = _pairIdsSim.first;
-    cv::Mat frameOne = _frames[idFirst].first.clone();
-    cv::Mat frameTwo = _frames[_pairIdsSim.second].first.clone();
+    const uint  idFirst = _pairIdsSim.first;
+    cv::Mat     frameOne = _frames[idFirst].first.clone();
+    cv::Mat     frameTwo = _frames[_pairIdsSim.second].first.clone();
 
     cv::GaussianBlur(frameOne.clone(), frameOne, cv::Size(3, 3), 0);
     cv::GaussianBlur(frameTwo.clone(), frameTwo, cv::Size(3, 3), 0);
-
     cv::cvtColor(frameOne.clone(), frameOne, cv::COLOR_BGR2HSV);
     cv::cvtColor(frameTwo.clone(), frameTwo, cv::COLOR_BGR2HSV);
 
-    cv::Mat diff;
+    cv::Mat     diff;
     cv::absdiff(frameTwo, frameOne, diff);
 
     std::vector<cv::Mat> hsvSplit, contours;
     cv::split(diff, hsvSplit);
 
-    cv::Mat satChannel = hsvSplit[1];
-    cv::Mat shapeElement = cv::getStructuringElement(cv::MorphShapes::MORPH_RECT, cv::Size(3, 3));
+    cv::Mat     satChannel = hsvSplit[1];
+    cv::Mat     shapeElement = cv::getStructuringElement(cv::MorphShapes::MORPH_RECT, cv::Size(3, 3));
 
     cv::morphologyEx(satChannel.clone(), satChannel, cv::MORPH_CLOSE, shapeElement, cv::Point(-1, -1), 10);
     cv::threshold(satChannel.clone(), satChannel, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
     cv::findContours(satChannel, contours, cv::RetrievalModes::RETR_EXTERNAL, 
-                    cv::ContourApproximationModes::CHAIN_APPROX_SIMPLE);
+                     cv::ContourApproximationModes::CHAIN_APPROX_SIMPLE);
 
     std::map<double, const cv::Rect2d> areaContours;
     for (auto contour : contours)
@@ -259,23 +256,23 @@ void    VideoRepairer::_detectObj()
         areaContours.insert(std::make_pair(rec.area(), rec));
     }
  
-    const auto higherContour = areaContours.rbegin();
+    const auto  higherContour = areaContours.rbegin();
     _frames[idFirst].second = higherContour->second;
     _trackingObj();
-
 }
 
-void    VideoRepairer::_trackingObj()
+void                        VideoRepairer::_trackingObj()
 {
-    const uint idInit = _pairIdsSim.first;
-    cv::Ptr<cv::Tracker> tracker = cv::TrackerCSRT::create();
+    const uint              idInit = _pairIdsSim.first;
+    cv::Ptr<cv::Tracker>    tracker = cv::TrackerCSRT::create();
+    cv::Mat                 frameInit = _frames[idInit].first;
+    auto&                   roi = _frames[idInit].second;
+    cv::Mat                 frameRec = frameInit.clone();
 
-    cv::Mat frameInit = _frames[idInit].first;
-    auto & roi = _frames[idInit].second;
-    cv::Mat frameRec = frameInit.clone();
     cv::rectangle(frameRec, roi, cv::Scalar(255, 0, 0), 2);
     tracker->init(frameInit, roi);
-    std::vector<uint>   _noTrackedFrame;
+
+    std::vector<uint>       noTrackedFrame;
     for (auto& dataframe : _frames)
     {
         if (dataframe.first == idInit)
@@ -284,23 +281,24 @@ void    VideoRepairer::_trackingObj()
         cv::Mat frame = dataframe.second.first;
         tracker->update(frame, detectRoi);
         if (detectRoi.area() == 0)
-            _noTrackedFrame.push_back(dataframe.first);
+            noTrackedFrame.push_back(dataframe.first);
     }
 
-    for (auto &id : _noTrackedFrame)
+    for (auto &id : noTrackedFrame)
     {
         auto &it = _frames.find(id);
         _frames.erase(it);
     }
 }
 
-void    VideoRepairer::_computeIoU(iterator_frames& itFirst)
+void                        VideoRepairer::_computeIoU(iterator_frames& itFirst)
 {
-    const auto& boxFirst = itFirst->second.second;
-    cv::Mat     firstFrame = itFirst->second.first.clone();
-    cv::Mat     sndFrame, diff;
-    std::vector<uint>   sameFrameToRemove;
+    const auto&             boxFirst = itFirst->second.second;
+    cv::Mat                 firstFrame = itFirst->second.first.clone();
+    cv::Mat                 sndFrame, diff;
+    std::vector<uint>       sameFrameToRemove;
     std::map<uint, double>  IuOWithdId;
+
     for (auto & snd : _frames)
     {
         if (itFirst->first == snd.first)
@@ -322,7 +320,7 @@ void    VideoRepairer::_computeIoU(iterator_frames& itFirst)
     }
 }
 
-void    VideoRepairer::_initMovementCost(cv::Mat_<double>& hugarianMatrice)
+void        VideoRepairer::_initMovementCost(cv::Mat_<double>& hugarianMatrice)
 {
     /*      INIT        */
     uint    id = 0;
@@ -351,18 +349,19 @@ void    VideoRepairer::_initMovementCost(cv::Mat_<double>& hugarianMatrice)
     _originalCostMat = hugarianMatrice.clone();
 }
 
-void    VideoRepairer::_useHungarianAlgorithm(cv::Mat_<double>& hugarianMatrice)
+void            VideoRepairer::_useHungarianAlgorithm(cv::Mat_<double>& hugarianMatrice)
 {
-    Munkres m;
+    Munkres     m;
+
     m.diag(false);
     m.solve(hugarianMatrice);
 }
 
-const std::vector<uint>     VideoRepairer::_updateSetOfIdFrames()
+const std::vector<uint>     VideoRepairer::_updateData()
 {
-    const auto& idsFrame = this->_assginementFrames->getExtremityIdClose();
+    const auto&             idsFrame = this->_assginementFrames->getExtremityIdClose();
+    uint                    index = 0;
 
-    uint index = 0;
     _indexToIdFrame.clear();
     _idFrameToIndex.clear();
 
@@ -371,14 +370,14 @@ const std::vector<uint>     VideoRepairer::_updateSetOfIdFrames()
         _idFrameToIndex.insert(std::make_pair(idFrame, index));
         _indexToIdFrame.insert(std::make_pair(index++, idFrame));
     }
-
     return idsFrame;
 }
 
-void    VideoRepairer::_updateCostMatrice(cv::Mat_<double>& hungarianMat)
+void                VideoRepairer::_updateCostMatrice(cv::Mat_<double>& hungarianMat)
 {
-    const auto& idsFrame = _updateSetOfIdFrames();
-    const uint  size = static_cast<uint>(idsFrame.size());
+    const auto&     idsFrame = _updateData();
+    const uint      size = static_cast<uint>(idsFrame.size());
+
     cv::resize(hungarianMat, hungarianMat, cv::Size(size, size));
     hungarianMat.setTo(10);
 
@@ -405,7 +404,7 @@ void    VideoRepairer::_updateCostMatrice(cv::Mat_<double>& hungarianMat)
 void    VideoRepairer::detectCorruptedFrames()
 {
     this->_extractFrames();
-    std::cout << "[Video Repairer] frames extracted from the video" << std::endl;
+    std::cout << "[Video Repairer] Frames extracted from the video" << std::endl;
 
     std::cout << "[Video Repairer] Starting to compute SSIM between frames..." << std::endl;
     this->_computeSSIM();
@@ -416,7 +415,108 @@ void    VideoRepairer::detectCorruptedFrames()
     std::cout << "[Video Repairer] Corrupted frames were found and removed" << std::endl;
 }
 
-const std::list<uint>   VideoRepairer::sortFrames()
+
+void        VideoRepairer::_checkMatching(const std::vector<std::list<uint>>& closeList,
+                                          std::map<uint, std::vector<uint>>& idToErase,
+                                          std::vector<uint>& swap_byIndexList)
+{
+    uint    indexList = 0;
+    for (auto& list : closeList)
+    {
+        auto    itA = list.begin();
+        auto    itB = itA;
+        while (itA != list.end() && std::next(itA,1) != list.end())
+        {
+            itB = std::next(itA, 1);
+            cv::Mat     frameA = _frames[*itA].first;
+            cv::Mat     frameB = _frames[*itB].first;
+            auto&       recA = _frames[*itA].second;
+            auto&       recB = _frames[*itB].second;
+            cv::Rect2d  rec = recA;
+            bool        recA_is_inside_MatB = (recA & cv::Rect2d(0, 0, frameB.cols, frameB.rows)) == recA;
+            bool        recB_is_inside_MatA = (recB & cv::Rect2d(0, 0, frameA.cols, frameA.rows)) == recB;
+
+            if (!recA_is_inside_MatB && !recB_is_inside_MatA)
+            {
+                const int idB = std::next(itB, 1) == list.end() ? *itB : -1;
+                _separateIds(*itA, idB, idToErase, indexList);
+                itA = itB;
+                continue;
+            }
+            if (!recA_is_inside_MatB && recB_is_inside_MatA)
+                rec = recB;
+            
+            auto& state = _is_initialMatchingValid(cv::Mat(frameA, rec), cv::Mat(frameB, rec));
+            if (state[0])
+            {
+                const int idB = std::next(itB, 1) == list.end() ? *itB : -1;
+                _separateIds(*itA, idB, idToErase, indexList);
+                itA = itB;
+                continue;
+            }
+            if (state[1])
+            {
+                swap_byIndexList.push_back(indexList);
+                break;
+            }
+            itA = itB;
+        }
+        ++indexList;
+    }
+
+}
+
+const std::array<bool,2>        VideoRepairer::_is_initialMatchingValid(cv::Mat roiA,
+                                                                            cv::Mat roiB)
+{
+    cv::cvtColor(roiA, roiA, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(roiB, roiB, cv::COLOR_BGR2GRAY);
+
+    const auto                  percB_A = _computePixelsDifference(cv::Mat(roiB - roiA));
+    const auto                  percA_B = _computePixelsDifference(cv::Mat(roiA - roiB));
+
+    std::array<bool, 2> state{ {false, false} };
+    if (std::min(percB_A, percA_B) >= 10.0f)
+        state[0] = true;
+
+    cv::Mat diffAbs;
+    cv::absdiff(roiB, roiA, diffAbs);
+
+    const auto                  absPerc = _computePixelsDifference(diffAbs);
+    auto                        abs_AB = absPerc - percA_B;
+    auto                        abs_BA = absPerc - percB_A;
+
+    abs_AB = abs_AB < 0 ? round(abs_AB * -1) : round(abs_AB);
+    abs_BA = abs_BA < 0 ? round(abs_BA * -1) : round(abs_BA);
+    if (abs_BA < abs_AB)
+        state[1] = true;
+
+    return state;
+}
+void                     VideoRepairer::_separateIds(uint itA, 
+                                                     int itB,
+                                                     std::map<uint,std::vector<uint>>& idToErase,
+                                                     uint indexList)
+{
+    if (idToErase.find(indexList) != idToErase.end())
+        idToErase[indexList].push_back(itA);
+    else
+        idToErase.insert(std::make_pair(indexList, std::vector{{ itA }}));
+
+    if (itB != -1)
+        idToErase[indexList].push_back(itB);
+}
+
+const float                    VideoRepairer::_computePixelsDifference(const cv::Mat diff)
+{
+    cv::threshold(diff.clone(), diff, 0, 255, cv::THRESH_BINARY + cv::THRESH_OTSU);
+    const float nbWhitePixels = static_cast<float>(cv::countNonZero(diff));
+    const float nbPixels = static_cast<float>(diff.rows * diff.cols);
+    const float perc = (nbWhitePixels / nbPixels) * 100.0f;
+    return perc;
+}
+
+const std::list<uint>          VideoRepairer::sortFrames()
 {
     this->_detectObj();
     std::cout << "[Video Repairer] Object detected and tracked from frames" << std::endl;
@@ -424,12 +524,10 @@ const std::list<uint>   VideoRepairer::sortFrames()
     this->_computeIoU(_frames.begin());
     std::cout << "[Video Repairer] Computed IoU of the detected object between each frames" << std::endl;
 
-    const uint size = static_cast<uint>(_IoUFrames.size());
-    cv::Mat_<double> hugarianMatrice(size, size, 10); // 10 for max default cost
+    const uint          size = static_cast<uint>(_IoUFrames.size());
+    cv::Mat_<double>    hugarianMatrice(size, size, 10); // 10 for max default cost
 
-   /*
-    *   INIT
-    */
+    /*   INIT   */
     this->_initMovementCost(hugarianMatrice);
     std::cout << "[Video Repairer] Applied a movement cost for each IoU values" << std::endl;
     this->_useHungarianAlgorithm(hugarianMatrice);
@@ -438,41 +536,44 @@ const std::list<uint>   VideoRepairer::sortFrames()
     this->_assginementFrames = std::make_unique<Manager>();
     std::cout << "[Video Repairer] The manager of frames assignement is launched" << std::endl;
     this->_assginementFrames->launchMatching(hugarianMatrice, this->_indexToIdFrame);
+    auto&               firstRound = this->_assginementFrames->getCloseList(0);
+    std::vector<uint>   swapIds;
+    std::map<uint, std::vector<uint>> idToErase;
 
-   /*
-    *   UPDATE
-    */
-    for (auto& closeList = this->_assginementFrames->getCloseList(0);
-        closeList.size() != 1;)
+    this->_checkMatching(firstRound, idToErase, swapIds);
+    this->_assginementFrames->setCloseList(0, idToErase, swapIds);
+        
+   /*   UPDATE  */
+    auto closeList = this->_assginementFrames->getCloseList(0);
+    while (closeList.size() != 1)
     {
         this->_updateCostMatrice(hugarianMatrice);
         this->_useHungarianAlgorithm(hugarianMatrice);
         this->_assginementFrames->launchMatching(hugarianMatrice, this->_indexToIdFrame);
+        closeList = this->_assginementFrames->getCloseList(0);
     }
 
     std::cout << "[Video Repairer] Finish to compute the last round of frames assignement" << std::endl;
-    return this->_assginementFrames->getCloseList(0)[0];
+    return closeList[0];
 }
 
-void    VideoRepairer::createVideo(const uintList& idList)
+void        VideoRepairer::createVideo(const uintList& idList)
 {
-    auto newpath = _videoPath;
+    auto    newpath = _videoPath;
     newpath.replace_filename(_outputName + ".mp4");
-    uint id = 1;
+    
+    uint    id = 1;
     while (fs::exists(newpath))
     {
         newpath.replace_filename(_outputName + std::to_string(id) + ".mp4");
         ++id;
     }
+
     cv::VideoWriter outputVideo(newpath.string(), _fourcc, _fps, _frameSize, true);
-
     if (!outputVideo.isOpened())
-    {
-        std::cout << "Could not open the output video for write: " << std::endl;
-        return;
-    }
-
-     for (const auto & id : idList)
+        throw std::runtime_error("Error by opening the video for write.");
+    
+    for (const auto & id : idList)
     {
         cv::Mat frame = _frames[id].first;
         outputVideo.write(frame);

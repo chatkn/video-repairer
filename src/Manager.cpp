@@ -1,17 +1,16 @@
 #include "Manager.hh"
 
 Manager::Manager()
-{
-}
+{}
 
 Manager::~Manager()
-{
-}
+{}
 
-const std::pair<iteratorVector, iteratorList>    Manager::_foundElemNewList(const uint id,
-                                                                                  std::vector<uintList>& newCloseList)
+const std::pair<iteratorVector, 
+                iteratorList>    Manager::_foundElemNewList(const uint id,
+                                                            std::vector<uintList>& newCloseList)
 {
-    iteratorList    end;
+    iteratorList                end;
     for (auto& itList = newCloseList.begin(); itList != newCloseList.end(); ++itList)
     {
         auto& itId = std::find(itList->begin(), itList->end(), id);
@@ -21,9 +20,11 @@ const std::pair<iteratorVector, iteratorList>    Manager::_foundElemNewList(cons
     return std::make_pair(newCloseList.end(), iteratorList());
 }
 
-void                        Manager::_mergeIDs(uint id, iteratorList& posId, 
-                                                   iteratorList& prevId, iteratorVector& itNewList, 
-                                                   std::pair<Direction, uintList>& foundedInFirst)
+void    Manager::_mergeIDs(uint id, 
+                           iteratorList& posId, 
+                           iteratorList& prevId, 
+                           iteratorVector& itNewList, 
+                           std::pair<Direction, uintList>& foundedInFirst)
 {    
     if (prevId != itNewList->begin())
     {
@@ -42,15 +43,15 @@ void                        Manager::_mergeIDs(uint id, iteratorList& posId,
     posId = std::find(itNewList->begin(), itNewList->end(), id);
 }
 
-void                        Manager::_updateLists(std::vector<uintList>& newCloseList)
+/*  REDUCE FONCTION */
+void            Manager::_updateLists(std::vector<uintList>& newCloseList)
 {
     const auto& firstList = _assignLists[0];
     const auto& sndCloseList = _assignLists[1]->getCloseList();
-    
-    auto itNewList = iteratorVector();
-    auto posId = iteratorList();
-    auto prevId = iteratorList();
-    bool sameList = false;
+    auto        itNewList = iteratorVector();
+    auto        posId = iteratorList();
+    auto        prevId = iteratorList();
+    bool        sameList = false;
 
     for (auto& list : sndCloseList)
     {
@@ -88,7 +89,7 @@ void                        Manager::_updateLists(std::vector<uintList>& newClos
                 continue;
             }
 
-            /*          INSERT ID  AND ITS COUPLES  in same list*/
+            /*          INSERT ID  AND ITS MATCHS  in same list*/
             uint idToAdd = foundedInFirst.first == FRONT ?
                            foundedInFirst.second.front() : foundedInFirst.second.back();
             posId = std::find(itNewList->begin(), itNewList->end(), idToAdd);
@@ -100,10 +101,10 @@ void                        Manager::_updateLists(std::vector<uintList>& newClos
     }
 }
 
-void                        Manager::launchMatching(cv::Mat_<double>& hungarianMatrice,
-                                                        const std::unordered_map<uint, uint>& indexToIdFrame)
+void        Manager::launchMatching(cv::Mat_<double>& hungarianMatrice,
+                                    const std::unordered_map<uint, uint>& indexToIdFrame)
 {
-    auto& newMatching = std::make_unique<ListAssignement>(hungarianMatrice, indexToIdFrame);
+    auto&   newMatching = std::make_unique<ListAssignement>(hungarianMatrice, indexToIdFrame);
 
     newMatching->sort();
     newMatching->updateIndexToIdFrame();
@@ -115,21 +116,25 @@ void                        Manager::launchMatching(cv::Mat_<double>& hungarianM
         std::vector<uintList> newList;
         this->_updateLists(newList);
 
-        while (!_assignLists.empty())
-            _assignLists.pop_back();
-
+        _assignLists.clear();
         _assignLists.push_back(std::make_unique<ListAssignement>(std::move(newList)));
     }
 }
 
 const std::vector<uint>     Manager::getExtremityIdClose()
 {
-    auto& list = std::prev(this->_assignLists.end(), 1);
-
+    auto&                   list = std::prev(this->_assignLists.end(), 1);
     return list->get()->getExtremityIdClose();
 }
 
 const std::vector<uintList>&    Manager::getCloseList(const uint id) const
 {
     return this->_assignLists[id]->getCloseList();
+}
+
+void                      Manager::setCloseList(const uint idList,
+                                                const std::map<uint, std::vector<uint>>& idToErase,
+                                                const std::vector<uint>& swap)
+{
+    this->_assignLists[idList]->setCloseList(idToErase, swap);
 }

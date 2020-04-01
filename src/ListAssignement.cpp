@@ -2,7 +2,8 @@
 
 ListAssignement::ListAssignement(cv::Mat_<double>& hungarianMatrice, 
                                  const std::unordered_map<uint, uint>& indexToIdFrame) 
-    : _hungarianMatrice(hungarianMatrice), _indexToIdFrame(indexToIdFrame)
+    :   _hungarianMatrice(hungarianMatrice),
+        _indexToIdFrame(indexToIdFrame)
 {
 }
 
@@ -15,13 +16,13 @@ ListAssignement::~ListAssignement()
 {
 }
 
-void                                    ListAssignement::sort()
+void            ListAssignement::sort()
 {
-    uintList freeIds;
-    const uint nrows = static_cast<uint>(_hungarianMatrice.rows);
-    const uint ncols = static_cast<uint>(_hungarianMatrice.cols);
+    uintList    freeIds;
+    const uint  nrows = static_cast<uint>(_hungarianMatrice.rows);
+    const uint  ncols = static_cast<uint>(_hungarianMatrice.cols);
 
-    uintList openIds;
+    uintList    openIds;
     for (uint idRow = 0; idRow < nrows; ++idRow)
     {
         const double* row = _hungarianMatrice.ptr<double>(idRow);
@@ -47,9 +48,11 @@ void                                    ListAssignement::sort()
 
 }
 
-const std::array<bool, 2>                ListAssignement::_areTheyAlreadyAdded(const uint row, const uint col)
+const std::array<bool, 2>   ListAssignement::_areTheyAlreadyAdded(const uint row, 
+                                                                  const uint col)
 {
-    bool rowExist, colExist = false;
+    bool                    rowExist, colExist = false;
+
     for (auto& itList = _open.begin(); itList != _open.end(); ++itList)
     {
         const auto itrow = std::find(itList->begin(), itList->end(), row);
@@ -84,18 +87,15 @@ const std::array<bool, 2>                ListAssignement::_areTheyAlreadyAdded(c
 }
 
 
-const std::vector<uintList>&            ListAssignement::getCloseList()
+const std::vector<uintList>&    ListAssignement::getCloseList()
 {
-    if (_close.size() == 1)
-        _close[0].reverse();
     return _close;
 }
 
-const std::vector<uint>                 ListAssignement::getExtremityIdClose()
+const std::vector<uint>     ListAssignement::getExtremityIdClose()
 {
     for (auto& list : _close)
     {
-        list.reverse();
         auto& idFront = list.front();
         auto& idBack = list.back();
         _extremityIdClose.push_back(idFront);
@@ -104,7 +104,7 @@ const std::vector<uint>                 ListAssignement::getExtremityIdClose()
     return _extremityIdClose;
 }
 
-void                                    ListAssignement::updateIndexToIdFrame()
+void    ListAssignement::updateIndexToIdFrame()
 {
     for (auto& list : _open)
         _close.push_back(std::move(list));
@@ -117,18 +117,51 @@ void                                    ListAssignement::updateIndexToIdFrame()
         }
 }
 
-std::pair<Direction, uintList>          ListAssignement::findId(const uint id)
+std::pair<Direction, uintList>      ListAssignement::findId(const uint id)
 {
-    Direction direction = Direction::NONE;
-    uintList nextToId;
+    Direction                       direction = Direction::NONE;
+    uintList                        foundList;
+
     for (const auto& list : _close)
     {
         auto & itFound = std::find(list.begin(), list.end(), id);
         if (itFound != list.end())
         {
             direction = std::next(itFound, 1) == list.end() ? Direction::BACK : Direction::FRONT;
-            nextToId = list;
+            foundList = list;
         }
     }
-    return std::make_pair(direction, nextToId);
+    return std::make_pair(direction, foundList);
+}
+
+void                                ListAssignement::setCloseList(const std::map<uint, std::vector<uint>>& idToErase,
+                                                                  const std::vector<uint>& swap)
+{
+    for (auto& list_Ids : idToErase)
+    {
+        const uint indexList = list_Ids.first;
+        std::vector<uintList>::iterator itList = _close.begin() + indexList;
+
+        auto& ids = list_Ids.second;
+        auto& closelist = _close[indexList];
+        for (auto id : ids)
+            closelist.remove(id);
+    }
+
+    for (auto& index : swap)
+    {
+        auto& list = _close[index];
+        std::swap(list.front(), list.back());
+    }
+
+    for (auto& itList = _close.begin(); itList != _close.end(); )
+    {
+        if (itList->empty())
+        {
+            std::vector<uintList>::const_iterator constItList = itList;
+            itList = _close.erase(constItList);
+        }
+        else
+            ++itList;
+    }
 }

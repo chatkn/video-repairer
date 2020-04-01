@@ -25,7 +25,6 @@ int main(int ac, char** av)
         auto & idFrames = repairer.sortFrames();
 
         repairer.createVideo(idFrames);
-
     }
     catch (std::exception& error)
     {
